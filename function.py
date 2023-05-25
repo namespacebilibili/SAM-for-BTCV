@@ -31,8 +31,8 @@ def validation(args, val_dataset, epoch, net: nn.Module):
                 img = imgs[..., cur : cur + chunk]
                 mask = masks[..., cur : cur + chunk]
                 pt = rearrange(pt, "b n d -> (b d) n")
-                img = rearrange(img, "b c d h w -> (b d) c h w")
-                mask = rearrange(mask, "b c d h w -> (b d) c h w")
+                img = rearrange(img, "b c h w d -> (b d) c h w")
+                mask = rearrange(mask, "b c h w d -> (b d) c h w")
                 img = img.repeat(1, 3, 1, 1)
                 point_labels = torch.ones(img.size(0))
                 imgs = torchvision.transforms.Resize(
