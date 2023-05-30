@@ -1,7 +1,3 @@
-""" helper function
-
-author junde
-"""
 import torch
 import os
 
@@ -9,7 +5,7 @@ import os
 # from lucent.optvis.param.color import to_valid_rgb
 # from lucent.optvis import objectives, transform, param
 # from lucent.misc.io import show
-import cfgtmp
+import cfg
 import torch
 from monai.transforms import (
     Compose,
@@ -33,7 +29,7 @@ from monai.data import (
     set_track_meta,
 )
 
-args = cfgtmp.parse_args()
+args = cfg.parse_args()
 device = torch.device('cuda', args.gpu_device)
 
 def get_decath_loader(args):
@@ -137,4 +133,4 @@ def get_decath_loader(args):
     return train_loader, val_loader, train_transforms, val_transforms, datalist, val_files
 
 print(args)
-train_loader, val_loader, train_transforms, val_transforms, datalist, val_files = get_decath_loader(args)
+# train_loader, val_loader, train_transforms, val_transforms, datalist, val_files = get_decath_loader(args)

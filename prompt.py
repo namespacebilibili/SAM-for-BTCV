@@ -17,7 +17,7 @@ def msk_preprocess(msk):
                         if now_msk[0][h][w] == type + 1:
                             uni_msk[h][w] = type + 1
                 process_msk[b, type, 0, :, :, d] = uni_msk
-                print(uni_msk)
+                # print(uni_msk)
 
     return process_msk
 
