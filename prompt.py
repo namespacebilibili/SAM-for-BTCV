@@ -28,9 +28,7 @@ def generate_click_prompt(msk):
     # msk.shape: (b, type, c, h, w, d)
     # prompt_list: (b, type, 2, d)
     prompt_list = torch.zeros((msk.size()[0], 13, 2, msk.size()[5]),dtype=torch.float)
-    b = -1
-    for single_msk in msk:
-        b += 1
+    for b, single_msk in enumerate(msk):
         # single_msk: (type, c, h, w, d)
         for d in range(single_msk.size()[4]):
             # now_msk: (type, c, h, w)
