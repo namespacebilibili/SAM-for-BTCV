@@ -104,24 +104,24 @@ def generate_resize_prompt(msk):
         prompt_list[i,:] = point_prompt
     return prompt_list
 
-def generate_multi_resize_prompt(msk):
+def generate_multi_resize_prompt(msk, k):
     # msk: (bdt, 1, 1024, 1024)
-    # prompt_list: (bdt, 2)
-    prompt_list = torch.zeros((msk.size()[0], 2),dtype=torch.float)
+    # prompt_list: (bdt, k, 2)
+    # prompt_list = torch.zeros((msk.size()[0], 2),dtype=torch.float)
+    prompt_list = torch.zeros((msk.size()[0], k, 2),dtype=torch.float)
     for i in range(msk.size()[0]):
         # single_msk: (1024, 1024)
         single_msk = msk[i][0]
         able_area = torch.nonzero(single_msk)
         if able_area.size()[0] == 0:
-            point_prompt = torch.tensor([-1, -1], dtype=torch.float)
+            point_prompt = torch.full((k, 2), -1, dtype=torch.float)
+            prompt_list[i, :, :] = point_prompt
         else:
             # print(now_msk[msk_type].squeeze(0).size())
             # print(able_area.size())
-
-            random_choice = random.randint(0, able_area.size()[0] - 1)
-            point_prompt = able_area[random_choice]
-            # print(point_prompt)
-        prompt_list[i,:] = point_prompt
+            for j in range(k):
+                random_choice = random.randint(0, able_area.size()[0] - 1)
+                prompt_list[i, j, :] = able_area[random_choice]
     return prompt_list
 
 def generate_box_resize_prompt(msk):

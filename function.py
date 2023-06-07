@@ -6,7 +6,7 @@ from einops import rearrange
 import torchvision
 import torchvision.transforms as transforms
 import os
-from prompt import generate_prompt, msk_preprocess, generate_resize_prompt
+from prompt import generate_resize_prompt, msk_preprocess, generate_multi_resize_prompt
 from utils import vis_image
 
 def validation(args, val_dataset, net: nn.Module):
@@ -56,32 +56,48 @@ def validation(args, val_dataset, net: nn.Module):
 
                 mask = rearrange(mask, "b t c h w d -> (b d t) c h w")
                 img = img.repeat(1, 3, 1, 1)
-                point_labels = torch.ones(img.size(0))
                 img = torchvision.transforms.Resize(
                     (args.image_size, args.image_size)
                 )(img)
                 mask = torchvision.transforms.Resize((args.image_size, args.image_size))(
                     mask
                 )
-                pt = generate_resize_prompt(mask) 
+
                 mask = torchvision.transforms.Resize((args.out_size, args.out_size))(
                     mask
                 )
                 #.to(device)
 
-                able = [
-                    i
-                    for i in range(pt.size()[0])
-                    if not torch.allclose(
-                        pt[i],
-                        torch.tensor(
-                            [-1, -1], dtype=torch.float32
-                        ),
-                    )
-                ]
-                #print(pt.shape,img.shape,mask.shape)
-                # print(mask)
-                # print(pt)
+                if args.use_multi:
+                    assert args.multi_size > 1
+                    pt = generate_multi_resize_prompt(mask,args.multi_size)
+                    point_labels = torch.ones(img.size(0),args.multi_size)
+                    able = [
+                        i
+                        for i in range(pt.size()[0])
+                        if not torch.allclose(   
+                            pt[i][args.multi_size-1],
+                            torch.tensor(
+                                [-1, -1], dtype=torch.float32
+                            ),
+                        )
+                    ]
+                else:
+                    pt = generate_resize_prompt(mask) 
+                    point_labels = torch.ones(img.size(0))
+                    able = [
+                        i
+                        for i in range(pt.size()[0])
+                        if not torch.allclose(
+                            pt[i],
+                            torch.tensor(
+                                [-1, -1], dtype=torch.float32
+                            ),
+                        )
+                    ]
+                    #print(pt.shape,img.shape,mask.shape)
+                    # print(mask)
+                    # print(pt)
                 print(len(able))
                 if len(able) == 0:
                     cur+=chunk
