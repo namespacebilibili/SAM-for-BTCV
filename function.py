@@ -6,7 +6,7 @@ from einops import rearrange
 import torchvision
 import torchvision.transforms as transforms
 import os
-from prompt import generate_resize_prompt, msk_preprocess, generate_multi_resize_prompt
+from prompt import generate_multi_resize_prompt, msk_preprocess, generate_resize_prompt
 from utils import vis_image
 
 def validation(args, val_dataset, net: nn.Module):
@@ -159,7 +159,7 @@ def validation(args, val_dataset, net: nn.Module):
 
 
 def train_sam(args, net: nn.Module, optimizer, train_loader,
-          epoch, writer, schedulers=None, vis = 50):
+              epoch, writer, schedulers=None, vis=50):
     hard = 0
     epoch_loss = 0
     ind = 0
@@ -178,8 +178,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader,
 
     with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img') as pbar:
         for pack in train_loader:
-            imgs = pack['image'].to(dtype = torch.float32, device = GPUdevice)
-            masks = pack['label'].to(dtype = torch.float32, device = GPUdevice)
+            imgs = pack['image'].to(dtype=torch.float32, device=GPUdevice)
+            masks = pack['label'].to(dtype=torch.float32, device=GPUdevice)
             # for k,v in pack['image_meta_dict'].items():
             #     print(k)
             if 'pt' not in pack:
@@ -219,7 +219,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader,
             if hard:
                 true_mask_ave = (true_mask_ave > 0.5).float()
                 #true_mask_ave = cons_tensor(true_mask_ave)
-            imgs = imgs.to(dtype = mask_type,device = GPUdevice)
+            imgs = imgs.to(dtype=mask_type,device=GPUdevice)
 
             '''Train'''
             for n, value in net.image_encoder.named_parameters():
@@ -240,7 +240,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader,
                 sparse_prompt_embeddings=se,
                 dense_prompt_embeddings=de, 
                 multimask_output=False,
-              )
+            )
 
             loss = lossfunc(pred, masks)
 
