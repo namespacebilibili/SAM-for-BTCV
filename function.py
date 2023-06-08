@@ -6,7 +6,7 @@ from einops import rearrange
 import torchvision
 import torchvision.transforms as transforms
 import os
-from prompt import generate_multi_resize_prompt, msk_preprocess, generate_resize_prompt
+from prompt import generate_multi_resize_prompt, msk_preprocess, generate_resize_prompt,generate_prompt
 from utils import vis_image
 
 def validation(args, val_dataset, net: nn.Module):
@@ -50,12 +50,13 @@ def validation(args, val_dataset, net: nn.Module):
                         )(masks[i][j])
                 masks = temp_masks
 
-                if args.use_multi:
-                    assert args.multi_size > 1
-                    pts = generate_multi_resize_prompt(masks,args.multi_size) # (bd, t, k, n)
-                else:
-                    pts = generate_resize_prompt(masks) # (bd, t, n)
+                # if args.use_multi:
+                #     assert args.multi_num > 1
+                #     pts = generate_multi_resize_prompt(masks,args.multi_num) # (bd, t, k, n)
+                # else:
+                #     pts = generate_resize_prompt(masks) # (bd, t, n)
 
+                pts, pt_labels, ables = generate_prompt(args,masks) # (bd, t, n)/(bd, t, k, n), (bd, t)/(bd, t, k), (bd, t)
                 bd, t, c, h, w = masks.size()
                 temp_masks = torch.zeros((bd, t, c, args.out_size, args.out_size), device=device)
                 for i in range(masks.size(0)):
@@ -65,34 +66,36 @@ def validation(args, val_dataset, net: nn.Module):
                         )(masks[i][j])
                 masks = temp_masks
 
-                # imgs: (bd, c, h, w), masks: (bd, t, c, h, w), pt: (bd, t, n)/(bd, t, k, n)
+                # imgs: (bd, c, h, w), masks: (bd, t, c, h, w), pts: (bd, t, n)/(bd, t, k, n)
                 for i in range(imgs.size(0)): # iter over b*d
                     img = imgs[i]
                     mask = masks[i]
                     pt = pts[i]
+                    pt_label = pt_labels[i]
+                    able = ables[i]
                     # img: (c, h, w), mask: (t, c, h, w), pt: (t, n)/(t, k, n)
-                    if args.use_multi:
-                        able = [
-                            i
-                            for i in range(pt.size()[0])
-                            if not torch.allclose(
-                                pt[i][args.multi_size - 1],
-                                torch.tensor(
-                                    [-1, -1], dtype=torch.float32
-                                ),
-                            )
-                        ]
-                    else:
-                        able = [
-                            i
-                            for i in range(pt.size()[0])
-                            if not torch.allclose(
-                                pt[i],
-                                torch.tensor(
-                                    [-1, -1], dtype=torch.float32
-                                ),
-                            )
-                        ]
+                    # if args.use_multi:
+                    #     able = [
+                    #         i
+                    #         for i in range(pt.size()[0])
+                    #         if not torch.allclose(
+                    #             pt[i][args.multi_num - 1],
+                    #             torch.tensor(
+                    #                 [-1, -1], dtype=torch.float32
+                    #             ),
+                    #         )
+                    #     ]
+                    # else:
+                    #     able = [
+                    #         i
+                    #         for i in range(pt.size()[0])
+                    #         if not torch.allclose(
+                    #             pt[i],
+                    #             torch.tensor(
+                    #                 [-1, -1], dtype=torch.float32
+                    #             ),
+                    #         )
+                    #     ]
                     type_num = len(able)
                     if not able:
                         continue
@@ -100,23 +103,22 @@ def validation(args, val_dataset, net: nn.Module):
                     idx += 1
                     mask_able = mask[able]
                     pt_able = pt[able]
-                    if args.use_multi:
-                        point_label = torch.ones((type_num,args.multi_size))
-                    else:
-                        point_label = torch.ones(type_num)
+                    point_label = pt_label[able]
+                    # if args.use_multi:
+                    #     point_label = torch.ones((type_num,args.multi_num))
+                    # else:
+                    #     point_label = torch.ones(type_num)
                     img_loss = 0
                     for j in range(type_num): # iter over type
                         mask_use = mask_able[j].unsqueeze(0)
                         img_use = img.unsqueeze(0)
-
                         pt_use = pt_able[j].unsqueeze(0)
                         point_label_use = point_label[j].unsqueeze(0)
-
                         show_pt = pt_use
                         point_use = pt_use
                         point_use = torch.as_tensor(point_use, device=device, dtype=torch.float32)
                         point_label_use = torch.as_tensor(point_label_use, device=device, dtype=int)
-                        if not args.use_multi:
+                        if not (args.use_multi or args.use_pn):
                             point_use = point_use[None,:,:]
                             point_label_use = point_label_use[None,:]
                         pt_use = (point_use,point_label_use)

@@ -1,6 +1,6 @@
 import torch
 import random
-
+import cfg
 
 def msk_preprocess(msk):
     # msk: (b, c, h, w, d)
@@ -18,33 +18,52 @@ def msk_preprocess(msk):
                 process_msk[b, t, 0, :, :, d] = uni_msk
     return process_msk
 
-def generate_prompt(msk):
-    # img: (b, c, h, w, d)
-    # msk.shape: (b, type, c, h, w, d)
-    # prompt_list: (b, type, 2, d)
-    prompt_list = torch.zeros((msk.size()[0], 13, 2, msk.size()[5]),dtype=torch.float)
-    for b, single_msk in enumerate(msk):
-        # single_msk: (type, c, h, w, d)
-        for d in range(single_msk.size()[4]):
-            # now_msk: (type, c, h, w)
-            now_msk = single_msk[:,:,:,:,d]
-            for msk_type in range(13):
-                # now_msk[msk_type]: (c, h, w)
-                # able_area: (h*w, 2)
-                able_area = torch.nonzero(now_msk[msk_type].squeeze(0))
-                if able_area.size()[0] == 0:
-                    point_prompt = torch.tensor([-1, -1], dtype=torch.float)
-                else:
-                   # print(now_msk[msk_type].squeeze(0).size())
-                   # print(able_area.size())
-                    random_choice = random.randint(0, able_area.size()[0] - 1)
-                    point_prompt = able_area[random_choice]
-                   # print(point_prompt)
-                prompt_list[b, msk_type, :, d] = point_prompt
-
-    # print(prompt_list)
-    # print(prompt_list.shape)
-    return prompt_list
+def generate_prompt(args,msk):
+    if args.use_multi:
+        prompt_list = generate_multi_resize_prompt(msk, args.multi_num)
+        point_labels = torch.ones((msk.size()[0], msk.size()[1], args.multi_num),dtype=torch.float)
+        ables = [[] for _ in range(msk.size()[0])]
+        for i in range(msk.size()[0]):
+            ables[i] = [
+                j
+                for j in range(msk.size()[1])
+                if not torch.allclose(
+                    prompt_list[i][j][args.multi_num - 1],
+                    torch.tensor(
+                        [-1, -1], dtype=torch.float32
+                    ),
+                )
+            ]
+    elif args.use_pn:
+        prompt_list, point_labels = generate_pn_resize_prompt(msk, args.multi_num)
+        ables = [[] for _ in range(msk.size()[0])]
+        for i in range(msk.size()[0]):
+            ables[i] = [
+                j
+                for j in range(msk.size()[1])
+                if not torch.allclose(
+                    prompt_list[i][j][args.multi_num - 1],
+                    torch.tensor(
+                        [-1, -1], dtype=torch.float32
+                    ),
+                )
+            ]
+    else:
+        prompt_list = generate_resize_prompt(msk)
+        point_labels = torch.ones((msk.size()[0], msk.size()[1]),dtype=torch.float)
+        ables = [[] for _ in range(msk.size()[0])]
+        for i in range(msk.size()[0]):
+            ables[i] = [
+                j
+                for j in range(msk.size()[1])
+                if not torch.allclose(
+                    prompt_list[i][j],
+                    torch.tensor(
+                        [-1, -1], dtype=torch.float32
+                    ),
+                )
+            ]
+    return prompt_list, point_labels, ables
 
 
 def generate_resize_prompt(msk):
@@ -86,6 +105,31 @@ def generate_multi_resize_prompt(msk, multi_num):
                     random_choice = random.randint(0, able_area.size()[0] - 1)
                     prompt_list[i, j, k, :] = able_area[random_choice]
     return prompt_list
+
+def generate_pn_resize_prompt(msk, multi_num):
+    # msk: (bd, t, 1, 1024, 1024)
+    # prompt_list: (bd, t, k+1, 2)
+    # label_list: (bd, t, k+1)
+    prompt_list = torch.zeros((msk.size()[0], msk.size()[1], multi_num+1, 2),dtype=torch.float)
+    label_list = torch.ones((msk.size()[0], msk.size()[1], multi_num+1),dtype=torch.float)
+    for i in range(msk.size()[0]):
+        for j in range(msk.size()[1]):
+            # single_msk: (1024, 1024)
+            single_msk = msk[i][j][0]
+            able_area = torch.nonzero(single_msk)
+            disable_area = torch.nonzero(1 - single_msk)    
+            if able_area.size()[0] == 0:
+                point_prompt = torch.full((multi_num+1, 2), -1, dtype=torch.float)
+                prompt_list[i, j, :, :] = point_prompt
+            else:
+                for k in range(multi_num):
+                    random_choice = random.randint(0, able_area.size()[0] - 1)
+                    prompt_list[i, j, k, :] = able_area[random_choice]
+                # randomly choose one point as negative sample
+                random_choice = random.randint(0, disable_area.size()[0] - 1)
+                prompt_list[i, j, multi_num, :] = disable_area[random_choice]
+                label_list[i, j, multi_num] = torch.tensor([-1], dtype=torch.float)
+    return prompt_list, label_list
 
 def generate_box_resize_prompt(msk):
     # msk: (bdt, 1, 1024, 1024)
