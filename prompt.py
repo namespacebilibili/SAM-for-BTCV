@@ -1,42 +1,6 @@
 import torch
 import random
 
-# def msk_preprocess(msk):
-#     # msk: (b, c, h, w, d)
-#     # process_msk: (b, type, c, h, w, d)
-
-#     process_msk = torch.zeros((msk.size()[0], 13, msk.size()[1], msk.size()[2], msk.size()[3], msk.size()[4]),dtype=torch.float)
-#     for b in range(msk.size()[0]):
-#         single_msk = msk[b]
-#         for d in range(msk.size()[4]):
-#             now_msk = single_msk[:, :, :, d]
-#             for type in range(13):
-#                 uni_msk = torch.zeros((msk.size()[2], msk.size()[3]))
-#                 for h in range(msk.size()[2]):
-#                     for w in range(msk.size()[3]):
-#                         if now_msk[0][h][w] == type + 1:
-#                             uni_msk[h][w] = type + 1
-#                 process_msk[b, type, 0, :, :, d] = uni_msk
-#                 # print(uni_msk)
-
-#     return process_msk
-
-
-# def msk_preprocess(msk):
-#     # msk: (b, c, h, w, d)
-#     # process_msk: (b, type, c, h, w, d)
-
-#     process_msk = torch.zeros_like(msk, dtype=torch.float)
-#     for b in range(msk.size()[0]):
-#         single_msk = msk[b]
-#         for d in range(msk.size()[4]):
-#             now_msk = single_msk[:, :, :, d]
-#             for type in range(13):
-#                 mask = now_msk == type + 1
-#                 process_msk[b, type, 0, :, :, d] = mask.float() * (type + 1)
-
-#     return process_msk
-
 
 def msk_preprocess(msk):
     # msk: (b, c, h, w, d)
@@ -46,14 +10,12 @@ def msk_preprocess(msk):
     for b in range(msk.size()[0]):
         single_msk = msk[b]
         for d in range(msk.size()[4]):
-            now_msk = single_msk[:, :, :, d]
-            for type in range(13):
-                x = torch.full_like(now_msk[0], type + 1)
-                y = torch.zeros_like(now_msk[0])
-                uni_msk = torch.where(now_msk[0] == type + 1, x, y)
-                process_msk[b, type, 0, :, :, d] = uni_msk
-
-
+            now_msk = single_msk[:, :, :, d][0]
+            for t in range(13):
+                x = torch.full_like(now_msk, t + 1)
+                y = torch.zeros_like(now_msk)
+                uni_msk = torch.where(now_msk == t + 1, x, y)
+                process_msk[b, t, 0, :, :, d] = uni_msk
     return process_msk
 
 def generate_prompt(msk):
@@ -86,42 +48,43 @@ def generate_prompt(msk):
 
 
 def generate_resize_prompt(msk):
-    # msk: (bdt, 1, 1024, 1024)
-    # prompt_list: (bdt, 2)
-    prompt_list = torch.zeros((msk.size()[0], 2),dtype=torch.float)
+    # msk: (bd, t, 1, 1024, 1024)
+    # prompt_list: (bd, t, 2)
+    prompt_list = torch.zeros((msk.size()[0], msk.size()[1], 2),dtype=torch.float)
     for i in range(msk.size()[0]):
-        # single_msk: (1024, 1024)
-        single_msk = msk[i][0]
-        able_area = torch.nonzero(single_msk)
-        if able_area.size()[0] == 0:
-            point_prompt = torch.tensor([-1, -1], dtype=torch.float)
-        else:
-            # print(now_msk[msk_type].squeeze(0).size())
-            # print(able_area.size())
-            random_choice = random.randint(0, able_area.size()[0] - 1)
-            point_prompt = able_area[random_choice]
-            # print(point_prompt)
-        prompt_list[i,:] = point_prompt
+        for j in range(msk.size()[1]):
+            # single_msk: (1024, 1024)
+            single_msk = msk[i][j][0]
+            able_area = torch.nonzero(single_msk)
+            if able_area.size()[0] == 0:
+                point_prompt = torch.tensor([-1, -1], dtype=torch.float)
+            else:
+                # print(now_msk[msk_type].squeeze(0).size())
+                # print(able_area.size())
+                random_choice = random.randint(0, able_area.size()[0] - 1)
+                point_prompt = able_area[random_choice]
+                # print(point_prompt)
+            prompt_list[i,j,:] = point_prompt
     return prompt_list
 
-def generate_multi_resize_prompt(msk, k):
-    # msk: (bdt, 1, 1024, 1024)
-    # prompt_list: (bdt, k, 2)
-    # prompt_list = torch.zeros((msk.size()[0], 2),dtype=torch.float)
-    prompt_list = torch.zeros((msk.size()[0], k, 2),dtype=torch.float)
+def generate_multi_resize_prompt(msk, multi_num):
+    # msk: (bd, t, 1, 1024, 1024)
+    # prompt_list: (bd, t, k, 2)
+    prompt_list = torch.zeros((msk.size()[0], msk.size()[1], multi_num, 2),dtype=torch.float)
     for i in range(msk.size()[0]):
-        # single_msk: (1024, 1024)
-        single_msk = msk[i][0]
-        able_area = torch.nonzero(single_msk)
-        if able_area.size()[0] == 0:
-            point_prompt = torch.full((k, 2), -1, dtype=torch.float)
-            prompt_list[i, :, :] = point_prompt
-        else:
-            # print(now_msk[msk_type].squeeze(0).size())
-            # print(able_area.size())
-            for j in range(k):
-                random_choice = random.randint(0, able_area.size()[0] - 1)
-                prompt_list[i, j, :] = able_area[random_choice]
+        for j in range(msk.size()[1]):
+            # single_msk: (1024, 1024)
+            single_msk = msk[i][j][0]
+            able_area = torch.nonzero(single_msk)
+            if able_area.size()[0] == 0:
+                point_prompt = torch.full((multi_num, 2), -1, dtype=torch.float)
+                prompt_list[i, j, :, :] = point_prompt
+            else:
+                # print(now_msk[msk_type].squeeze(0).size())
+                # print(able_area.size())
+                for k in range(multi_num):
+                    random_choice = random.randint(0, able_area.size()[0] - 1)
+                    prompt_list[i, j, k, :] = able_area[random_choice]
     return prompt_list
 
 def generate_box_resize_prompt(msk):
