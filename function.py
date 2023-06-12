@@ -151,6 +151,7 @@ def train_sam(args, train_dataset, net: nn.Module, optimizer):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
     loss = DiceCELoss(sigmoid=True, squared_pred=True, reduction="mean")
+    optimizer.zero_grad()
 
     total_loss = 0
     with tqdm(total=batch_num, desc="train", unit="batch", leave=False) as pbar:
