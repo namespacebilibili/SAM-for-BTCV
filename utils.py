@@ -115,10 +115,8 @@ def get_network(args, net, use_gpu=True, gpu_device=0, distribution=True):
     """
 
     if net == 'sam':
-        from model.sam import SamPredictor, sam_model_registry
-        from model.sam.utils.transforms import ResizeLongestSide
-        # from segment_anything import SamPredictor, sam_model_registry
-        # from segment_anything.utils.transforms import ResizeLongestSide
+        from segment_anything import SamPredictor, sam_model_registry
+        from segment_anything.utils.transforms import ResizeLongestSide
 
         net = sam_model_registry['vit_b'](checkpoint=args.sam_ckpt).to(device)
     else:
