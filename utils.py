@@ -54,7 +54,7 @@ from PIL import Image
 import torch
 
 # from precpt import run_precpt
-# from models.discriminator import Discriminator
+from model.discriminator import Discriminator
 # from siren_pytorch import SirenNet, SirenWrapper
 
 import shutil
@@ -115,12 +115,12 @@ def get_network(args, net, use_gpu=True, gpu_device=0, distribution=True):
     """
 
     if net == 'sam':
-        from segment_anything import SamPredictor, sam_model_registry
-        from segment_anything.utils.transforms import ResizeLongestSide
+        from model.sam import SamPredictor, sam_model_registry
+        from model.sam.utils.transforms import ResizeLongestSide
+        # from segment_anything import SamPredictor, sam_model_registry
+        # from segment_anything.utils.transforms import ResizeLongestSide
 
-        # net = sam_model_registry['vit_b'](args,checkpoint=args.sam_ckpt).to(device)
         net = sam_model_registry['vit_b'](checkpoint=args.sam_ckpt).to(device)
-        # net = sam_model_registry["default"](checkpoint="sam_vit_b_01ec64.pth").to(device)
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()
