@@ -54,7 +54,7 @@ from PIL import Image
 import torch
 
 # from precpt import run_precpt
-from model.discriminator import Discriminator
+# from model.discriminator import Discriminator
 # from siren_pytorch import SirenNet, SirenWrapper
 
 import shutil
