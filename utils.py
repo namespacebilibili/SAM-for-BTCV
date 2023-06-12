@@ -970,7 +970,7 @@ def hook_model(model, image_f):
 
     return hook
 
-def vis_image(imgs, pred_masks, gt_masks, save_path, reverse=False, points=None):
+def vis_image(imgs, pred_masks, gt_masks, save_path, reverse=False, points=None,use_box=False):
 
     b,c,h,w = pred_masks.size()
     dev = pred_masks.get_device()
@@ -995,13 +995,12 @@ def vis_image(imgs, pred_masks, gt_masks, save_path, reverse=False, points=None)
             imgs = imgs[:,0,:,:].unsqueeze(1).expand(b,3,h,w)
         pred_masks = pred_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w)
         gt_masks = gt_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w)
-        if points != None:
+        if (points != None) and (not use_box):
             for i in range(b):
                 if args.thd:
                     p = np.round(points.cpu()/args.roi_size * args.out_size).to(dtype=torch.int)
                 else:
                     p = np.round(points.cpu()/args.image_size * args.out_size).to(dtype=torch.int)
-                # gt_masks[i,:,points[i,0]-5:points[i,0]+5,points[i,1]-5:points[i,1]+5] = torch.Tensor([255, 0, 0]).to(dtype = torch.float32, device = torch.device('cuda:' + str(dev)))
                 if args.use_multi or args.use_pn:
                     for j in range(args.multi_num):
                         gt_masks[i,0,p[i,j,0]-5:p[i,j,0]+5,p[i,j,1]-5:p[i,j,1]+5] = 0.5
@@ -1015,6 +1014,30 @@ def vis_image(imgs, pred_masks, gt_masks, save_path, reverse=False, points=None)
                     gt_masks[i,0,p[i,args.multi_num,0]-5:p[i,args.multi_num,0]+5,p[i,args.multi_num,1]-5:p[i,args.multi_num,1]+5] = 0.5
                     gt_masks[i,1,p[i,args.multi_num,0]-5:p[i,args.multi_num,0]+5,p[i,args.multi_num,1]-5:p[i,args.multi_num,1]+5] = 0.1
                     gt_masks[i,2,p[i,args.multi_num,0]-5:p[i,args.multi_num,0]+5,p[i,args.multi_num,1]-5:p[i,args.multi_num,1]+5] = 0.4
+        elif (points != None) and use_box:
+            for i in range(b):
+                if args.thd:
+                    p = np.round(points.cpu()/args.roi_size * args.out_size).to(dtype=torch.int)
+                else:
+                    p = np.round(points.cpu()/args.image_size * args.out_size).to(dtype=torch.int)
+                left_up_x = p[i,0]
+                left_up_y = p[i,1]
+                right_down_x = p[i,2]
+                right_down_y = p[i,3]
+                # print(gt_masks[i].shape)
+                # print(left_up_x, left_up_y, right_down_x, right_down_y)
+                gt_masks[i,0,left_up_x:right_down_x,left_up_y-4:left_up_y+4] = 0.5
+                gt_masks[i,1,left_up_x:right_down_x,left_up_y-4:left_up_y+4] = 0.1
+                gt_masks[i,2,left_up_x:right_down_x,left_up_y-4:left_up_y+4] = 0.4
+                gt_masks[i,0,left_up_x-4:left_up_x+4,left_up_y:right_down_y] = 0.5
+                gt_masks[i,1,left_up_x-4:left_up_x+4,left_up_y:right_down_y] = 0.1
+                gt_masks[i,2,left_up_x-4:left_up_x+4,left_up_y:right_down_y] = 0.4
+                gt_masks[i,0,right_down_x-4:right_down_x+4,left_up_y:right_down_y] = 0.5
+                gt_masks[i,1,right_down_x-4:right_down_x+4,left_up_y:right_down_y] = 0.1
+                gt_masks[i,2,right_down_x-4:right_down_x+4,left_up_y:right_down_y] = 0.4
+                gt_masks[i,0,left_up_x:right_down_x,right_down_y-4:right_down_y+4] = 0.5
+                gt_masks[i,1,left_up_x:right_down_x,right_down_y-4:right_down_y+4] = 0.1
+                gt_masks[i,2,left_up_x:right_down_x,right_down_y-4:right_down_y+2] = 0.4
         tup = (imgs[:row_num,:,:,:],pred_masks[:row_num,:,:,:], gt_masks[:row_num,:,:,:])
         # compose = torch.cat((imgs[:row_num,:,:,:],pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:]),0)
         compose = torch.cat(tup,0)
