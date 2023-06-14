@@ -1,5 +1,3 @@
-cd ~
-git clone https://github.com/namespacebilibili/SAM-for-BTCV.git
 cd SAM-for-BTCV
 mkdir data
 mkdir image
