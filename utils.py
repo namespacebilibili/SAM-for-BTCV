@@ -94,7 +94,6 @@ from monai.data import (
 
 
 
-
 args = cfg.parse_args()
 device = torch.device('cuda', args.gpu_device)
 
@@ -122,6 +121,22 @@ def get_network(args, net, use_gpu=True, gpu_device=0, distribution=True):
 
         # net = sam_model_registry['vit_b'](args,checkpoint=args.sam_ckpt).to(device)
         net = sam_model_registry['vit_b'](checkpoint=args.sam_ckpt).to(device)
+        # net = sam_model_registry["default"](checkpoint="sam_vit_b_01ec64.pth").to(device)
+    elif net == 'sam_with_classifier':
+        from segment_anything import SamPredictor, sam_model_registry
+        from segment_anything.utils.transforms import ResizeLongestSide
+        from segment_anything import build_sam_vit_b_classifier
+        # from segment_anything import SamPredictor, sam_model_registry
+        # from segment_anything.utils.transforms import ResizeLongestSide
+
+        # net = sam_model_registry['vit_b'](args,checkpoint=args.sam_ckpt).to(device)
+        net = build_sam_vit_b_classifier()
+        net.to(device)
+        net_dict = net.state_dict()
+        sam_net = torch.load("sam_vit_b_01ec64.pth")
+        state_dict = {k: v for k, v in sam_net.items() if k in net_dict.keys()}
+        net_dict.update(state_dict)
+        net.load_state_dict(net_dict)
         # net = sam_model_registry["default"](checkpoint="sam_vit_b_01ec64.pth").to(device)
     else:
         print('the network name you have entered is not supported yet')
