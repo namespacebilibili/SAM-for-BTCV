@@ -137,7 +137,25 @@ def get_network(args, net, use_gpu=True, gpu_device=0, distribution=True):
         state_dict = {k: v for k, v in sam_net.items() if k in net_dict.keys()}
         net_dict.update(state_dict)
         net.load_state_dict(net_dict)
+        for m in net.mask_decoder.classifier_prediction_head.modules():
+            if isinstance(m, torch.nn.Linear):
+                m.weight.data.normal_(mean=0, std=0.01)
+                m.bias.data.fill_(0.0)
+
         # net = sam_model_registry["default"](checkpoint="sam_vit_b_01ec64.pth").to(device)
+    elif net == 'sam_pretrain':
+        from segment_anything import SamPredictor, sam_model_registry
+        from segment_anything.utils.transforms import ResizeLongestSide
+        from segment_anything import build_sam_vit_b_classifier
+        # from segment_anything import SamPredictor, sam_model_registry
+        # from segment_anything.utils.transforms import ResizeLongestSide
+
+        # net = sam_model_registry['vit_b'](args,checkpoint=args.sam_ckpt).to(device)
+        net = build_sam_vit_b_classifier()
+        net.to(device)
+        net.load_state_dict(torch.load("checkpoint/exp_classifier/25.pth"))
+
+
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()
@@ -156,7 +174,7 @@ def get_network(args, net, use_gpu=True, gpu_device=0, distribution=True):
 def get_decath_loader(args):
 
     train_transforms = Compose(
-        [   
+        [
             LoadImaged(keys=["image", "label"], ensure_channel_first=True),
             ScaleIntensityRanged(
                 keys=["image"],
@@ -595,7 +613,7 @@ def raw_out(maps_f,img):  # raw
         # maps = torch.nn.Sigmoid()(maps)
         return maps
         # return torch.cat((img,maps),1)
-    return inner    
+    return inner
 
 
 class CompositeActivation(torch.nn.Module):
@@ -920,7 +938,7 @@ def export(tensor, img_path=None):
     #         w_map = (w_map * 255).astype(np.uint8)
     #         image_name = image_name[0].split('/')[-1].split('.')[0] + str(i)+ '.png'
     #         wheat = sns.heatmap(w_map,cmap='coolwarm')
-    #         figure = wheat.get_figure()    
+    #         figure = wheat.get_figure()
     #         figure.savefig ('./fft_maps/weightheatmap/'+str(image_name), dpi=400)
     #         figure = 0
     # else:
@@ -986,6 +1004,7 @@ def hook_model(model, image_f):
         return out
 
     return hook
+
 
 def vis_image(imgs, pred_masks, gt_masks, save_path, reverse=False, points=None,use_box=False):
 
@@ -1058,6 +1077,81 @@ def vis_image(imgs, pred_masks, gt_masks, save_path, reverse=False, points=None,
         tup = (imgs[:row_num,:,:,:],pred_masks[:row_num,:,:,:], gt_masks[:row_num,:,:,:])
         # compose = torch.cat((imgs[:row_num,:,:,:],pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:]),0)
         compose = torch.cat(tup,0)
+        vutils.save_image(compose, fp=save_path, nrow=row_num, padding=10)
+
+    return
+
+def vis_image2(imgs, pred_masks, gt_masks, save_path, reverse=False, points=None,use_box=False):
+
+    b,c,h,w = pred_masks.size()
+    dev = pred_masks.get_device()
+    row_num = min(b, 4)
+
+    if torch.max(pred_masks) > 1 or torch.min(pred_masks) < 0:
+        pred_masks = torch.sigmoid(pred_masks)
+
+    if reverse == True:
+        pred_masks = 1 - pred_masks
+        gt_masks = 1 - gt_masks
+    if c == 2:
+        pred_disc, pred_cup = pred_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w), pred_masks[:,1,:,:].unsqueeze(1).expand(b,3,h,w)
+        gt_disc, gt_cup = gt_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w), gt_masks[:,1,:,:].unsqueeze(1).expand(b,3,h,w)
+        tup = (imgs[:row_num,:,:,:],pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:])
+        # compose = torch.cat((imgs[:row_num,:,:,:],pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:]),0)
+        compose = torch.cat((pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:]),0)
+        vutils.save_image(compose, fp=save_path, nrow=row_num, padding=10)
+    else:
+        imgs = torchvision.transforms.Resize((h,w))(imgs)
+        if imgs.size(1) == 1:
+            imgs = imgs[:,0,:,:].unsqueeze(1).expand(b,3,h,w)
+        pred_masks = pred_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w)
+        gt_masks = gt_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w)
+        if (points != None) and (not use_box):
+            for i in range(b):
+                if args.thd:
+                    p = np.round(points.cpu()/args.roi_size * args.out_size).to(dtype=torch.int)
+                else:
+                    p = np.round(points.cpu()/args.image_size * args.out_size).to(dtype=torch.int)
+                if args.use_multi or args.use_pn:
+                    for j in range(args.multi_num):
+                        gt_masks[i,0,p[i,j,0]-5:p[i,j,0]+5,p[i,j,1]-5:p[i,j,1]+5] = 0.5
+                        gt_masks[i,1,p[i,j,0]-5:p[i,j,0]+5,p[i,j,1]-5:p[i,j,1]+5] = 0.1
+                        gt_masks[i,2,p[i,j,0]-5:p[i,j,0]+5,p[i,j,1]-5:p[i,j,1]+5] = 0.4
+                else:
+                    gt_masks[i,0,p[i,0]-5:p[i,0]+5,p[i,1]-5:p[i,1]+5] = 0.5
+                    gt_masks[i,1,p[i,0]-5:p[i,0]+5,p[i,1]-5:p[i,1]+5] = 0.1
+                    gt_masks[i,2,p[i,0]-5:p[i,0]+5,p[i,1]-5:p[i,1]+5] = 0.4
+                if args.use_pn:
+                    gt_masks[i,0,p[i,args.multi_num,0]-5:p[i,args.multi_num,0]+5,p[i,args.multi_num,1]-5:p[i,args.multi_num,1]+5] = 0.5
+                    gt_masks[i,1,p[i,args.multi_num,0]-5:p[i,args.multi_num,0]+5,p[i,args.multi_num,1]-5:p[i,args.multi_num,1]+5] = 0.1
+                    gt_masks[i,2,p[i,args.multi_num,0]-5:p[i,args.multi_num,0]+5,p[i,args.multi_num,1]-5:p[i,args.multi_num,1]+5] = 0.4
+        elif (points != None) and use_box:
+            for i in range(b):
+                if args.thd:
+                    p = np.round(points.cpu()/args.roi_size * args.out_size).to(dtype=torch.int)
+                else:
+                    p = np.round(points.cpu()/args.image_size * args.out_size).to(dtype=torch.int)
+                left_up_x = p[i,0]
+                left_up_y = p[i,1]
+                right_down_x = p[i,2]
+                right_down_y = p[i,3]
+                # print(gt_masks[i].shape)
+                # print(left_up_x, left_up_y, right_down_x, right_down_y)
+                gt_masks[i,0,left_up_x:right_down_x,left_up_y-4:left_up_y+4] = 0.5
+                gt_masks[i,1,left_up_x:right_down_x,left_up_y-4:left_up_y+4] = 0.1
+                gt_masks[i,2,left_up_x:right_down_x,left_up_y-4:left_up_y+4] = 0.4
+                gt_masks[i,0,left_up_x-4:left_up_x+4,left_up_y:right_down_y] = 0.5
+                gt_masks[i,1,left_up_x-4:left_up_x+4,left_up_y:right_down_y] = 0.1
+                gt_masks[i,2,left_up_x-4:left_up_x+4,left_up_y:right_down_y] = 0.4
+                gt_masks[i,0,right_down_x-4:right_down_x+4,left_up_y:right_down_y] = 0.5
+                gt_masks[i,1,right_down_x-4:right_down_x+4,left_up_y:right_down_y] = 0.1
+                gt_masks[i,2,right_down_x-4:right_down_x+4,left_up_y:right_down_y] = 0.4
+                gt_masks[i,0,left_up_x:right_down_x,right_down_y-4:right_down_y+4] = 0.5
+                gt_masks[i,1,left_up_x:right_down_x,right_down_y-4:right_down_y+4] = 0.1
+                gt_masks[i,2,left_up_x:right_down_x,right_down_y-4:right_down_y+2] = 0.4
+        tup = gt_masks[:row_num,:,:,:]
+        # compose = torch.cat((imgs[:row_num,:,:,:],pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:]),0)
+        compose = tup
         vutils.save_image(compose, fp=save_path, nrow=row_num, padding=10)
 
     return
