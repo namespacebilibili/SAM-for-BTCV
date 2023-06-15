@@ -1,4 +1,3 @@
-cd SAM-for-BTCV
 mkdir data
 mkdir image
 mkdir log1
