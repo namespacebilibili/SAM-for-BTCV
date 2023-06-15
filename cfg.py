@@ -1,6 +1,6 @@
 import argparse
 
-def parse_args():    
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('-baseline', type=str, default='unet', help='baseline net type')
     parser.add_argument('-seg_net', type=str, default='transunet', help='net type')
@@ -14,7 +14,7 @@ def parse_args():
     parser.add_argument('-gpu', type=bool, default=True, help='use gpu or not')
     parser.add_argument('-gpu_device', type=int, default=0, help='use which gpu')
     parser.add_argument('-sim_gpu', type=int, default=0, help='split sim to this gpu')
-    parser.add_argument('-epoch', type=int, default=30, help='epoch number')
+    parser.add_argument('-epoch', type=int, default=10, help='epoch number')
     parser.add_argument('-image_size', type=int, default=1024, help='image_size')
     parser.add_argument('-out_size', type=int, default=256, help='output_size')
     parser.add_argument('-patch_size', type=int, default=2, help='patch_size')
@@ -26,7 +26,8 @@ def parse_args():
     parser.add_argument('-b', type=int, default=1, help='batch size for dataloader')
     parser.add_argument('-s', type=bool, default=True, help='whether shuffle the dataset')
     parser.add_argument('-warm', type=int, default=1, help='warm up training phase')
-    parser.add_argument('-lr', type=float, default=1e-5, help='initial learning rate')
+    parser.add_argument('-lr', type=float, default=1e-4, help='initial learning rate')
+
     parser.add_argument('-uinch', type=int, default=1, help='input channel of unet')
     parser.add_argument('-imp_lr', type=float, default=3e-4, help='implicit learning rate')
     parser.add_argument('-weights', type=str, default=0, help='the weights file you want to test')
@@ -40,11 +41,12 @@ def parse_args():
     parser.add_argument('-num_sample', type=int, default=2, help='sample pos and neg')
     parser.add_argument('-roi_size', type=int, default=96, help='resolution of roi')
     parser.add_argument('-evl_chunk', type=int, default=None, help='evaluation chunk')
-    parser.add_argument('-net', type=str, default='sam', help='net type')
+    parser.add_argument('-net', type=str, default='sam_with_classifier', help='net type')
     parser.add_argument('-use_multi',type=bool,default=False,help='use multi prompts')
     parser.add_argument('-multi_num',type=int,default=4,help='number of prompts')
     parser.add_argument('-use_pn',type=bool,default=False,help='use positive/negative prompts')
     parser.add_argument('-use_box',type=bool,default=False,help='use box prompts')
+    parser.add_argument('-exp',type=str,default='exp1',help='experiment name')
     parser.add_argument(
         '-data_path',
         type=str,

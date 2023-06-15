@@ -10,6 +10,8 @@ from prompt import generate_multi_resize_prompt, msk_preprocess, generate_resize
 from utils import *
 from torch.nn.functional import normalize,threshold
 import numpy as np
+
+name = {0: "background", 1: "spleen", 2:"right_kidney", 3:"left_kidney", 4:"gallbladder", 5:"esophagus", 6:"liver", 7:"stomach", 8:"aorta", 9:"inferior_vena_cava", 10:"portal_vein_and_splenic_vein", 11:"pancreas", 12:"right_adrenal_gland", 13:"left_adrenal_gland"}
 def validation(args, val_dataset, net: nn.Module):
     """
     img: (b, c, h, w, d) -> (bd, c, h, w)
@@ -33,10 +35,10 @@ def validation(args, val_dataset, net: nn.Module):
     with tqdm(total=batch_num, desc="validation", unit="batch", leave=False) as pbar:
         for idx, data in enumerate(val_dataset):
             # imgsw: (b c h w d), mskw: (b c h w d)
+            idx_0 = idx
             imgsw = data["image"].to(dtype=torch.float32, device=device)
             masksw = data["label"].to(dtype=torch.float32, device=device)
             masksw, labelsw = msk_label_preprocess(masksw) # (b t c h w d) (b t d t)
-            names = data["image_meta_dict"]["filename_or_obj"]
             cur = 0
             chunk = args.chunk
             while (cur + chunk) <= imgsw.size(-1):
@@ -141,23 +143,23 @@ def validation(args, val_dataset, net: nn.Module):
                             # print("type_loss:",type_loss)
                             class_pred = class_pred.squeeze(0)
                             label_use = label_use.squeeze(0)
-                            if torch.argmax(class_pred).item() + 1 == label_use.item():
+                            if torch.argmax(class_pred).item() == label_use.item():
                                 right_num += 1
                             class_loss_cal = class_loss(class_pred, label_use.to(device))
                             img_loss += type_loss
                             img_class_loss += class_loss_cal
                             temp = eval_seg(pred, mask_use, thre)
-                            # mix_res = tuple([sum(a) for a in zip(mix_res, temp)])
+                            mix_res = tuple([sum(a) for a in zip(mix_res, temp)])
                             # memory = torch.cuda.memory_allocated()
                             # print(f"Current GPU memory usage: {memory / 1024**2:.2f} MB")
                             if idx % 1 == 0:
-                                vis_image(
+                                vis_image2(
                                     img_use,
                                     pred,
                                     mask_use,
-                                    f"./image/{idx}_{j}.jpg",
+                                    f"./image2/{idx_0}_{idx}_{name[label_use.item()+1]}.jpg",
                                     reverse=False,
-                                    points=show_pt,
+                                    points=None,
                                     use_box=args.use_box,
                                 )
                     # print(f"img_loss:{img_loss},type_num:{type_num},img_loss/num:{img_loss/type_num}")
@@ -167,6 +169,7 @@ def validation(args, val_dataset, net: nn.Module):
             pbar.update()
     mix_res = tuple([a/num for a in mix_res])
     print("class_acc: ",right_num/all_item_num)
+    print(mix_res)
     return total_loss / num, mix_res
 
 
@@ -182,8 +185,8 @@ def train_sam(args, train_dataset, net: nn.Module, optimizer):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
     loss = DiceCELoss(sigmoid=True, squared_pred=True, reduction="mean")
-    optimizer.zero_grad()
     class_loss = nn.CrossEntropyLoss()
+    optimizer.zero_grad()
     total_loss = 0.0
     total_class_loss = 0.0
     num = 0
@@ -192,6 +195,7 @@ def train_sam(args, train_dataset, net: nn.Module, optimizer):
     with tqdm(total=batch_num, desc="train", unit="batch", leave=False) as pbar:
         for idx, data in enumerate(train_dataset):
             # imgsw: (b c h w d), mskw: (b c h w d)
+            idx_0 = idx
             imgsw = data["image"].to(dtype=torch.float32, device=device)
             masksw = data["label"].to(dtype=torch.float32, device=device)
             masksw, labelsw = msk_label_preprocess(masksw) # (b t c h w d) (b t d t)
@@ -297,36 +301,32 @@ def train_sam(args, train_dataset, net: nn.Module, optimizer):
                             multimask_output=False,
                         )
                         #upscaled_masks = net.postprocess_masks(pred,(256,256),(1024,1024)).to(device)
-                        #binary_pred = normalize(threshold(pred,0.0,0)).to(device)
-                        # gt_mask_resized = torch.from_numpy(np.resize(mask_use,(1,1,mask_use.shape[0],mask_use.shape[1]))).to(device)
-                        # gt_binary_mask = torch.as_tensor(mask_use>0,dtype=torch.float32)
-                        type_loss = loss(pred, mask_use)
+                        binary_pred = normalize(threshold(pred,0.0,0)).to(device)
+                        type_loss = loss(binary_pred, mask_use)
                         class_pred = class_pred.squeeze(0)
 
                         label_use = label_use.squeeze(0)
                         # print("class_pred : ", torch.argmax(class_pred) + 1)
-                        # print("ground_label : ", label_use)    
-                        if torch.argmax(class_pred).item() + 1 == label_use.item():
+                        # print("ground_label : ", label_use)
+                        if torch.argmax(class_pred).item() == label_use.item():
                             right_num += 1
                         class_loss_cal = class_loss(class_pred, label_use.to(device))
                         # print("class_loss : ",class_loss_cal)
                         all_loss = type_loss + class_loss_cal
                         optimizer.zero_grad()
-                        # type_loss.backward()
-                        # class_loss.backward()
                         all_loss.backward()
                         optimizer.step()
                         # for name, para in net.mask_decoder.output_hypernetworks_mlps.named_parameters():
                         #     print(para.grad==0)
                         # print("type_loss:",type_loss)
                         img_loss += type_loss
-                        img_class_loss += class_pred
-                        if idx % 10 == 0:   
+                        img_class_loss += class_loss_cal
+                        if idx_0 % 3 == 0:
                             vis_image(
                                 img_use,
                                 pred,
                                 mask_use,
-                                f"./train_image/{idx}_{j}.jpg",
+                                f"./train_image/{idx_0}_{idx}_{name[label_use.item()+1]}.jpg",
                                 reverse=False,
                                 points=show_pt,
                                 use_box=args.use_box,
