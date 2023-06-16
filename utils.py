@@ -120,7 +120,12 @@ def get_network(args, net, use_gpu=True, gpu_device=0, distribution=True):
         # from segment_anything.utils.transforms import ResizeLongestSide
 
         # net = sam_model_registry['vit_b'](args,checkpoint=args.sam_ckpt).to(device)
-        net = sam_model_registry['vit_b'](checkpoint=args.sam_ckpt).to(device)
+        if args.net_scale == 'b':
+            net = sam_model_registry['vit_b'](checkpoint=args.sam_ckpt).to(device)
+        elif args.net_scale == 'h':
+            net = sam_model_registry['vit_h'](checkpoint=args.sam_ckpt).to(device)
+        elif args.net_scale == 'l':
+            net = sam_model_registry['vit_l'](checkpoint=args.sam_ckpt).to(device)
         # net = sam_model_registry["default"](checkpoint="sam_vit_b_01ec64.pth").to(device)
     elif net == 'sam_with_classifier':
         from segment_anything import SamPredictor, sam_model_registry
@@ -130,10 +135,15 @@ def get_network(args, net, use_gpu=True, gpu_device=0, distribution=True):
         # from segment_anything.utils.transforms import ResizeLongestSide
 
         # net = sam_model_registry['vit_b'](args,checkpoint=args.sam_ckpt).to(device)
-        net = build_sam_vit_b_classifier()
+        if args.net_scale == 'b':
+            net = build_sam_vit_b_classifier()
+        elif args.net_scale == 'h':
+            net = build_sam_vit_h_classifier()
+        elif args.net_scale == 'l':
+            net = build_sam_vit_l_classifier()
         net.to(device)
         net_dict = net.state_dict()
-        sam_net = torch.load("sam_vit_b_01ec64.pth")
+        sam_net = torch.load(args.sam_ckpt)
         state_dict = {k: v for k, v in sam_net.items() if k in net_dict.keys()}
         net_dict.update(state_dict)
         net.load_state_dict(net_dict)
@@ -151,9 +161,14 @@ def get_network(args, net, use_gpu=True, gpu_device=0, distribution=True):
         # from segment_anything.utils.transforms import ResizeLongestSide
 
         # net = sam_model_registry['vit_b'](args,checkpoint=args.sam_ckpt).to(device)
-        net = build_sam_vit_b_classifier()
+        if args.net_scale == 'b':
+            net = build_sam_vit_b_classifier()
+        elif args.net_scale == 'h':
+            net = build_sam_vit_h_classifier()
+        elif args.net_scale == 'l':
+            net = build_sam_vit_l_classifier()
         net.to(device)
-        net.load_state_dict(torch.load("checkpoint/exp_classifier/25.pth"))
+        net.load_state_dict(torch.load(args.net_ckpt))
 
 
     else:
@@ -195,7 +210,7 @@ def get_decath_loader(args):
             RandCropByPosNegLabeld(
                 keys=["image", "label"],
                 label_key="label",
-                spatial_size=(args.roi_size, args.roi_size, args.chunk),
+                spatial_size=(args.roi_size, args.roi_size, args.cropchunk),
                 pos=1,
                 neg=1,
                 num_samples=args.num_sample,
@@ -263,7 +278,7 @@ def get_decath_loader(args):
     )
     train_loader = ThreadDataLoader(train_ds, num_workers=0, batch_size=args.b, shuffle=True)
     val_ds = CacheDataset(
-        data=val_files, transform=val_transforms, cache_num=2, cache_rate=1.0, num_workers=0
+        data=val_files, transform=val_transforms, cache_num=6, cache_rate=1.0, num_workers=0
     )
     val_loader = ThreadDataLoader(val_ds, num_workers=0, batch_size=1)
 
@@ -1156,6 +1171,80 @@ def vis_image2(imgs, pred_masks, gt_masks, save_path, reverse=False, points=None
 
     return
 
+def vis_image3(imgs, pred_masks, gt_masks, save_path, reverse=False, points=None,use_box=False):
+
+    b,c,h,w = pred_masks.size()
+    dev = pred_masks.get_device()
+    row_num = min(b, 4)
+
+    if torch.max(pred_masks) > 1 or torch.min(pred_masks) < 0:
+        pred_masks = torch.sigmoid(pred_masks)
+
+    if reverse == True:
+        pred_masks = 1 - pred_masks
+        gt_masks = 1 - gt_masks
+    if c == 2:
+        pred_disc, pred_cup = pred_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w), pred_masks[:,1,:,:].unsqueeze(1).expand(b,3,h,w)
+        gt_disc, gt_cup = gt_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w), gt_masks[:,1,:,:].unsqueeze(1).expand(b,3,h,w)
+        tup = (imgs[:row_num,:,:,:],pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:])
+        # compose = torch.cat((imgs[:row_num,:,:,:],pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:]),0)
+        compose = torch.cat((pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:]),0)
+        vutils.save_image(compose, fp=save_path, nrow=row_num, padding=10)
+    else:
+        imgs = torchvision.transforms.Resize((h,w))(imgs)
+        if imgs.size(1) == 1:
+            imgs = imgs[:,0,:,:].unsqueeze(1).expand(b,3,h,w)
+        pred_masks = pred_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w)
+        gt_masks = gt_masks[:,0,:,:].unsqueeze(1).expand(b,3,h,w)
+        if (points != None) and (not use_box):
+            for i in range(b):
+                if args.thd:
+                    p = np.round(points.cpu()/args.roi_size * args.out_size).to(dtype=torch.int)
+                else:
+                    p = np.round(points.cpu()/args.image_size * args.out_size).to(dtype=torch.int)
+                if args.use_multi or args.use_pn:
+                    for j in range(args.multi_num):
+                        gt_masks[i,0,p[i,j,0]-5:p[i,j,0]+5,p[i,j,1]-5:p[i,j,1]+5] = 0.5
+                        gt_masks[i,1,p[i,j,0]-5:p[i,j,0]+5,p[i,j,1]-5:p[i,j,1]+5] = 0.1
+                        gt_masks[i,2,p[i,j,0]-5:p[i,j,0]+5,p[i,j,1]-5:p[i,j,1]+5] = 0.4
+                else:
+                    gt_masks[i,0,p[i,0]-5:p[i,0]+5,p[i,1]-5:p[i,1]+5] = 0.5
+                    gt_masks[i,1,p[i,0]-5:p[i,0]+5,p[i,1]-5:p[i,1]+5] = 0.1
+                    gt_masks[i,2,p[i,0]-5:p[i,0]+5,p[i,1]-5:p[i,1]+5] = 0.4
+                if args.use_pn:
+                    gt_masks[i,0,p[i,args.multi_num,0]-5:p[i,args.multi_num,0]+5,p[i,args.multi_num,1]-5:p[i,args.multi_num,1]+5] = 0.5
+                    gt_masks[i,1,p[i,args.multi_num,0]-5:p[i,args.multi_num,0]+5,p[i,args.multi_num,1]-5:p[i,args.multi_num,1]+5] = 0.1
+                    gt_masks[i,2,p[i,args.multi_num,0]-5:p[i,args.multi_num,0]+5,p[i,args.multi_num,1]-5:p[i,args.multi_num,1]+5] = 0.4
+        elif (points != None) and use_box:
+            for i in range(b):
+                if args.thd:
+                    p = np.round(points.cpu()/args.roi_size * args.out_size).to(dtype=torch.int)
+                else:
+                    p = np.round(points.cpu()/args.image_size * args.out_size).to(dtype=torch.int)
+                left_up_x = p[i,0]
+                left_up_y = p[i,1]
+                right_down_x = p[i,2]
+                right_down_y = p[i,3]
+                # print(gt_masks[i].shape)
+                # print(left_up_x, left_up_y, right_down_x, right_down_y)
+                gt_masks[i,0,left_up_x:right_down_x,left_up_y-4:left_up_y+4] = 0.5
+                gt_masks[i,1,left_up_x:right_down_x,left_up_y-4:left_up_y+4] = 0.1
+                gt_masks[i,2,left_up_x:right_down_x,left_up_y-4:left_up_y+4] = 0.4
+                gt_masks[i,0,left_up_x-4:left_up_x+4,left_up_y:right_down_y] = 0.5
+                gt_masks[i,1,left_up_x-4:left_up_x+4,left_up_y:right_down_y] = 0.1
+                gt_masks[i,2,left_up_x-4:left_up_x+4,left_up_y:right_down_y] = 0.4
+                gt_masks[i,0,right_down_x-4:right_down_x+4,left_up_y:right_down_y] = 0.5
+                gt_masks[i,1,right_down_x-4:right_down_x+4,left_up_y:right_down_y] = 0.1
+                gt_masks[i,2,right_down_x-4:right_down_x+4,left_up_y:right_down_y] = 0.4
+                gt_masks[i,0,left_up_x:right_down_x,right_down_y-4:right_down_y+4] = 0.5
+                gt_masks[i,1,left_up_x:right_down_x,right_down_y-4:right_down_y+4] = 0.1
+                gt_masks[i,2,left_up_x:right_down_x,right_down_y-4:right_down_y+2] = 0.4
+        tup = pred_masks[:row_num,:,:,:]
+        # compose = torch.cat((imgs[:row_num,:,:,:],pred_disc[:row_num,:,:,:], pred_cup[:row_num,:,:,:], gt_disc[:row_num,:,:,:], gt_cup[:row_num,:,:,:]),0)
+        compose = tup
+        vutils.save_image(compose, fp=save_path, nrow=row_num, padding=10)
+
+    return
 def eval_seg(pred,true_mask_p,threshold):
     '''
     threshold: a int or a tuple of int

@@ -22,12 +22,12 @@ def parse_args():
     parser.add_argument('-depth', type=int, default=1, help='depth')
     parser.add_argument('-heads', type=int, default=16, help='heads number')
     parser.add_argument('-mlp_dim', type=int, default=1024, help='mlp_dim')
-    parser.add_argument('-w', type=int, default=2, help='number of workers for dataloader')
+    parser.add_argument('-w', type=int, default=1, help='number of workers for dataloader')
     parser.add_argument('-b', type=int, default=1, help='batch size for dataloader')
     parser.add_argument('-s', type=bool, default=True, help='whether shuffle the dataset')
     parser.add_argument('-warm', type=int, default=1, help='warm up training phase')
     parser.add_argument('-lr', type=float, default=1e-4, help='initial learning rate')
-
+    parser.add_argument('-class_lr', type=float, default=1e-3, help='initial learning rate')
     parser.add_argument('-uinch', type=int, default=1, help='input channel of unet')
     parser.add_argument('-imp_lr', type=float, default=3e-4, help='implicit learning rate')
     parser.add_argument('-weights', type=str, default=0, help='the weights file you want to test')
@@ -35,9 +35,12 @@ def parse_args():
     parser.add_argument('-sim_weights', type=str, default=0, help='the weights sim')
     parser.add_argument('-distributed', default='none',type=str,help='multi GPU ids to use')
     parser.add_argument('-dataset', default='isic',type=str,help='dataset name')
+    parser.add_argument('-net_scale', default='b',type=str, help='net scale, b,h,l')
     parser.add_argument('-sam_ckpt', default="./checkpoint/sam/sam_vit_b_01ec64.pth",type=str, help='sam checkpoint address')
+    parser.add_argument('-net_ckpt', default="./checkpoint/exp80466/14.pth",type=str, help='net checkpoint address')
     parser.add_argument('-thd', type=bool, default=False, help='3d or not')
-    parser.add_argument('-chunk', type=int, default=1, help='crop volume depth')
+    parser.add_argument('-chunk', type=int, default=1, help='volume depth')
+    parser.add_argument('-cropchunk', type=int, default=16, help='crop volume depth')
     parser.add_argument('-num_sample', type=int, default=2, help='sample pos and neg')
     parser.add_argument('-roi_size', type=int, default=96, help='resolution of roi')
     parser.add_argument('-evl_chunk', type=int, default=None, help='evaluation chunk')
@@ -47,6 +50,7 @@ def parse_args():
     parser.add_argument('-use_pn',type=bool,default=False,help='use positive/negative prompts')
     parser.add_argument('-use_box',type=bool,default=False,help='use box prompts')
     parser.add_argument('-exp',type=str,default='exp1',help='experiment name')
+    parser.add_argument('-vis_image', type=bool,default=False, help='vis image')
     parser.add_argument(
         '-data_path',
         type=str,
