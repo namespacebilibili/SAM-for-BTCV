@@ -2,6 +2,10 @@
 
 SAM for BTCV dataset
 
-image: $(b,c,h,w,d)$
-mask: $(b,t,c,h,w,d)$
-prompt: $(b,t,2,d)$
+## Setup
+
+`./install.sh`; requirements in `env.yml`
+
+## Run
+
+`cfg.py` is all you need. For validation: `validation.py` and for train: `train.py`
