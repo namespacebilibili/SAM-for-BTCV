@@ -208,25 +208,3 @@ def generate_box_resize_prompt(msk):
 
 
 
-# def generate_prompt(msk):
-#     prompt_list = torch.zeros((msk.size()[0], 13, 2, msk.size()[5]), dtype=torch.float)
-#     for b, single_msk in enumerate(msk):
-#         # single_msk: (type, c, h, w, d)
-#         for d in range(single_msk.size()[4]):
-#             # now_msk: (type, c, h, w)
-#             now_msk = single_msk[:,:,:,:,d]
-#             able_area = torch.nonzero(now_msk).squeeze(1)
-#             if able_area.size()[0] == 0:
-#                 point_prompt = torch.tensor([-1, -1], dtype=torch.float)
-#             else:
-#                 random_choice = random.randint(0, able_area.size()[0] - 1)
-#                 point_prompt = able_area[random_choice]
-#             prompt_list[b, :, :, d] = point_prompt
-
-#     return prompt_list
-# msk = torch.zeros([1,1,5,5,1], dtype=torch.float)
-# msk[0,0,2,2,0] = 1
-# msk[0,0,2,4,0] = 2
-# processed_msk = msk_preprocess(msk)
-# processed_msk = torch.zeros([1,13 ,1,5,5,1], dtype=torch.float)
-# generate_click_prompt(processed_msk)
