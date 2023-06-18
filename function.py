@@ -11,6 +11,7 @@ from utils import *
 from torch.nn.functional import normalize,threshold
 import numpy as np
 import time
+import random
 
 name = {0: "background", 1: "spleen", 2:"right_kidney", 3:"left_kidney", 4:"gallbladder", 5:"esophagus", 6:"liver", 7:"stomach", 8:"aorta", 9:"inferior_vena_cava", 10:"portal_vein_and_splenic_vein", 11:"pancreas", 12:"right_adrenal_gland", 13:"left_adrenal_gland"}
 def validation(args, val_dataset, net: nn.Module):
@@ -22,11 +23,12 @@ def validation(args, val_dataset, net: nn.Module):
     net.eval()
     batch_num = len(val_dataset)
     device = torch.device('cuda', args.gpu_device)
-    print(device)
     loss = DiceCELoss(sigmoid=True, squared_pred=True, reduction="mean")
     class_loss = nn.CrossEntropyLoss()
     total_loss = 0.0
     total_class_loss = 0.0
+    total_mDice = torch.zeros([13], dtype=torch.float)
+    total_typenum = torch.zeros([13], dtype=torch.float)
     num = 0
     thre = (0.1, 0.3, 0.5, 0.7, 0.9)
     mix_res = (0, 0)
@@ -95,10 +97,6 @@ def validation(args, val_dataset, net: nn.Module):
                     pt_able = pt[able]
                     if not args.use_box:
                         point_label = pt_label[able]
-                    # if args.use_multi:
-                    #     point_label = torch.ones((type_num,args.multi_num))
-                    # else:
-                    #     point_label = torch.ones(type_num)
                     img_loss = 0.0
                     img_class_loss = 0.0
                     img_res = (0, 0, 0, 0)
@@ -149,7 +147,6 @@ def validation(args, val_dataset, net: nn.Module):
                                     dense_prompt_embeddings=dense_emb,
                                     multimask_output=False,
                                 )
-                            # binary_pred = normalize(threshold(pred,0.0,0)).to(device)
                             type_loss = loss(pred, mask_use)
                             label_use = label_use.squeeze(0)
                             if args.net != 'sam':
@@ -163,11 +160,11 @@ def validation(args, val_dataset, net: nn.Module):
 
                             temp = eval_seg(pred, mask_use, thre)
                             img_res = tuple([sum(a) for a in zip(img_res, temp)])
-                            # memory = torch.cuda.memory_allocated()
-                            # print(f"Current GPU memory usage: {memory / 1024**2:.2f} MB")
+                            total_typenum[label_use.item()] += 1 
+                            total_mDice[label_use.item()] += temp[1]
                             if args.vis_image == True:
                                 if idx % 1 == 0:
-                                    vis_image3(
+                                    vis_image(
                                         img_use,
                                         pred,
                                         mask_use,
@@ -176,23 +173,32 @@ def validation(args, val_dataset, net: nn.Module):
                                         points=show_pt,
                                         use_box=args.use_box,
                                     )
-                    # print(f"img_loss:{img_loss},type_num:{type_num},img_loss/num:{img_loss/type_num}")
                     img_res = tuple(a/type_num for a in img_res)
                     mix_res = tuple([sum(a) for a in zip(img_res,mix_res)])
                     total_loss += (img_loss/type_num)
                     if args.net != 'sam':
                         total_class_loss += (img_class_loss/type_num)
                         all_item_num += type_num
+
             pbar.update()
     mix_res = tuple([a/num for a in mix_res])
+    # print(total_mDice)
+    # print(total_typenum)
+    for i in range(13):
+        if not total_typenum[i] == 0:
+            total_mDice[i] /= total_typenum[i]
+
+    print("Dice for each type = ", total_mDice)
+    print("mDice = ", torch.mean(total_mDice))
     if args.net != 'sam':
-        print("class_acc: ",right_num/all_item_num)
+        if all_item_num != 0:
+            print("class_acc: ",right_num/all_item_num)
         # print(mix_res)
-    return total_loss / num, mix_res
+    return 0 if num == 0 else total_loss / num, mix_res,torch.mean(total_mDice),0 if all_item_num == 0 else right_num/all_item_num,total_mDice
 
 
 
-def train_sam(args, train_dataset, net: nn.Module, optimizer,class_weight):
+def train_sam(args, train_dataset, net: nn.Module, optimizer, class_weight):
     """
     img: (b, c, h, w, d) -> (bd, c, h, w)
     mask: (b, c, h, w, d) -> (b, t, c, h, w, d) -> (bd, t, c, h, w)
@@ -201,23 +207,25 @@ def train_sam(args, train_dataset, net: nn.Module, optimizer,class_weight):
     net.train()
     batch_num = len(train_dataset)
     device = torch.device('cuda', args.gpu_device)
-    print(device)
+    # print(device)
     loss = DiceCELoss(sigmoid=True, squared_pred=True, reduction="mean")
     class_loss = nn.CrossEntropyLoss()
+    thre = (0.1, 0.3, 0.5, 0.7, 0.9)
     # torch.cuda.empty_cache()
-    if class_weight > 0:
-        for group in optimizer.param_groups:
-            if group['lr']==args.lr:
-                group['lr']=0
-    for group in optimizer.param_groups:
-        print(group['lr'])
+    # if class_weight > 0:
+    #     for group in optimizer.param_groups:
+    #         if group['lr']==args.lr:
+    #             group['lr']=0
+    # for group in optimizer.param_groups:
+    #     print(group['lr'])
     optimizer.zero_grad()
     total_loss = 0.0
     total_class_loss = 0.0
     num = 0
     right_num = 0
     all_item_num = 0
-
+    total_mDice = torch.zeros([13], dtype=torch.float)
+    total_typenum = torch.zeros([13], dtype=torch.float)
 
     with tqdm(total=batch_num, desc="train", unit="batch", leave=False) as pbar:
         for idx, data in enumerate(train_dataset):
@@ -234,6 +242,9 @@ def train_sam(args, train_dataset, net: nn.Module, optimizer,class_weight):
                 masks = masksw[:,:,:,:,:, cur: cur + chunk]
                 labels = labelsw[:,:,cur: cur + chunk, :]
                 cur += chunk
+                choooose = random.random()
+                if choooose < args.random_choose:
+                    continue
                 imgs = rearrange(imgs, "b c h w d -> (b d) c h w")
                 masks = rearrange(masks, "b t c h w d -> (b d) t c h w")
                 labels = rearrange(labels, "b t d n -> (b d) t n")
@@ -326,34 +337,22 @@ def train_sam(args, train_dataset, net: nn.Module, optimizer,class_weight):
                             dense_prompt_embeddings=dense_emb,
                             multimask_output=False,
                         )
-                        #upscaled_masks = net.postprocess_masks(pred,(256,256),(1024,1024)).to(device)
-                        # binary_pred = normalize(threshold(pred,0.0,0)).to(device)
                         type_loss = loss(pred, mask_use)
-                        # print("type_loss : ",type_loss)
                         class_pred = class_pred.squeeze(0)
 
                         label_use = label_use.squeeze(0)
-                        # print("class_pred : ", torch.argmax(class_pred) + 1)
-                        # print("ground_label : ", label_use)
                         if torch.argmax(class_pred).item() == label_use.item():
                             right_num += 1
                         class_loss_cal = class_loss(class_pred, label_use.to(device))
-                        # print("class_loss : ",class_loss_cal)
                         all_loss = type_loss + class_loss_cal * class_weight
                         optimizer.zero_grad()
                         all_loss.backward()
                         optimizer.step()
-                        # if class_weight == 0:
-                        #     optimizer.zero_grad()
-                        #     all_loss.backward()
-                        #     optimizer.step()
-                        # else:
-                        #     optimizer.zero_grad()
-                        #     class_loss_cal.backward()
-                        #     optimizer.step()
-                        # for name, para in net.mask_decoder.output_hypernetworks_mlps.named_parameters():
-                        #     print(para.grad==0)
-                        # print("type_loss:",type_loss)
+                        temp = eval_seg(pred, mask_use, thre)
+                        total_typenum[label_use.item()] += 1 
+                        total_mDice[label_use.item()] += temp[1]
+
+
                         img_loss += type_loss
                         img_class_loss += class_loss_cal
                         if args.vis_image == True:
@@ -372,7 +371,12 @@ def train_sam(args, train_dataset, net: nn.Module, optimizer,class_weight):
                     total_class_loss += (img_class_loss / type_num)
                     all_item_num += type_num
             pbar.update()
-    # batch_num *= (imgsw.size(-1)//chunk)
-    print("class_acc:",right_num/all_item_num)
+    if all_item_num != 0:
+        print("class_acc:",right_num/all_item_num)
     print("total_class_loss:", total_class_loss)
-    return total_loss / num
+    for i in range(13):
+        if not total_typenum[i] == 0:
+            total_mDice[i] /= total_typenum[i]
+    print("Dice for each type = ", total_mDice)
+    print("mDice = ", torch.mean(total_mDice))
+    return total_class_loss, 0 if num == 0 else total_loss / num, torch.mean(total_mDice), 0 if all_item_num == 0 else right_num/all_item_num
